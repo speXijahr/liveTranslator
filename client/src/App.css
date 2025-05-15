@@ -1,0 +1,404 @@
+/* Modern color scheme and variables */
+:root {
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --secondary-color: #64748b;
+  --background-color: #f8fafc; /* Light gray, good for depth */
+  --card-background: #ffffff;
+  --text-primary: #1e293b;    /* Dark slate, good for readability */
+  --text-secondary: #64748b;
+  --border-color: #e2e8f0;
+  --success-color: #22c55e;
+  --error-color: #ef4444;
+  --highlight-bg: #e0f2fe; /* Light blue for highlights/selection */
+
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.06), 0 2px 2px -1px rgb(0 0 0 / 0.04);
+  --shadow: 0 4px 8px -2px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  --radius-sm: 0.375rem; /* 6px */
+  --radius: 0.5rem;     /* 8px */
+  --radius-lg: 0.75rem;  /* 12px */
+
+  --transition-fast: all 0.15s ease-in-out;
+  --transition-std: all 0.25s ease-in-out;
+}
+
+/* Reset and base styles */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* App container */
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  max-width: 768px; /* Slightly narrower for typical chat interface */
+  margin: 0 auto;
+  padding: 1.5rem 1rem; /* More padding on top/bottom */
+}
+
+/* Header styles */
+.header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.header h1 {
+  color: var(--primary-color);
+  font-size: 1.75rem; /* Slightly larger */
+  font-weight: 700;
+}
+
+.error-message {
+  background-color: #fee2e2; /* Light red background for errors */
+  color: #b91c1c; /* Darker red text for errors */
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid #fecaca; /* Red border */
+  font-size: 0.875rem;
+  margin-top: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Controls section */
+.controls-section {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem; /* Increased margin */
+  align-items: center;
+  padding: 1rem;
+  background-color: var(--card-background);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+/* Unified Language selector styles */
+.language-selector-component { /* Wrapper div for the component */
+  flex: 1;
+}
+
+.language-selector-component label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+}
+
+.language-selector-component select {
+  width: 100%;
+  padding: 0.75rem; /* Increased padding */
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background-color: var(--card-background);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: var(--transition-std);
+  appearance: none; /* Custom arrow will be needed for full styling */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 1.25em;
+}
+
+.language-selector-component select:hover {
+  border-color: var(--primary-color);
+}
+
+.language-selector-component select:focus,
+.language-selector-component select:focus-visible {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2); /* Softer focus ring */
+}
+
+/* Record button styles */
+.record-btn {
+  padding: 0.875rem 1.75rem; /* Increased padding */
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-weight: 600; /* Bolder */
+  cursor: pointer;
+  transition: var(--transition-std);
+  background-color: var(--primary-color);
+  color: white;
+  min-width: 140px; /* Increased min-width */
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.record-btn:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+  box-shadow: var(--shadow);
+}
+
+.record-btn.recording {
+  background-color: var(--error-color);
+  animation: pulse 1.5s infinite ease-in-out;
+}
+.record-btn.recording:hover:not(:disabled) {
+  background-color: #d32f2f; /* Darker red on hover */
+}
+
+.record-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.record-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+
+
+/* Transcript display styles */
+.transcript-display {
+  background-color: var(--card-background);
+  padding: 1.5rem; /* Increased padding */
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  flex: 1; /* This makes it take available space */
+  min-height: 300px; /* Ensure a minimum height */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem; /* Increased gap */
+  margin-top: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--secondary-color) var(--background-color);
+}
+
+.transcript-display::-webkit-scrollbar {
+  width: 8px;
+}
+.transcript-display::-webkit-scrollbar-track {
+  background: var(--background-color);
+  border-radius: var(--radius);
+}
+.transcript-display::-webkit-scrollbar-thumb {
+  background-color: var(--secondary-color);
+  border-radius: var(--radius);
+  border: 2px solid var(--background-color);
+}
+
+.status-message { /* For "Waiting for transcription..." etc. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.message-bubble {
+  padding: 0.875rem 1rem; /* Adjusted padding */
+  border-radius: var(--radius-lg); /* Larger radius for softer look */
+  max-width: 85%;
+  position: relative;
+  word-wrap: break-word;
+  animation: popIn 0.3s ease-out forwards;
+  box-shadow: var(--shadow-xs);
+}
+
+.message-bubble.speaker {
+  background-color: var(--primary-color);
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: var(--radius-sm); /* "Tail" effect */
+}
+
+.message-bubble.viewer {
+  background-color: #e2e8f0; /* Lighter gray for viewer */
+  color: var(--text-primary);
+  align-self: flex-start;
+  border-bottom-left-radius: var(--radius-sm); /* "Tail" effect */
+}
+
+.message-text {
+  margin-bottom: 0.375rem; /* Slightly more margin */
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.translate-btn {
+  background-color: transparent;
+  border: 1px solid currentColor;
+  padding: 0.3rem 0.6rem; /* Adjusted padding */
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  margin-top: 0.5rem;
+}
+
+.message-bubble.speaker .translate-btn {
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.message-bubble.speaker .translate-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.message-bubble.viewer .translate-btn {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.message-bubble.viewer .translate-btn:hover:not(:disabled) {
+  background-color: var(--highlight-bg);
+  border-color: var(--primary-hover);
+  color: var(--primary-hover);
+}
+
+.translate-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.translated-info {
+  font-size: 0.7rem; /* Smaller */
+  color: var(--text-secondary);
+  display: block;
+  margin-top: 0.375rem;
+  opacity: 0.8;
+}
+.message-bubble.speaker .translated-info {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+
+/* QR Code display styles */
+.qr-code-display {
+  text-align: center;
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: var(--card-background);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.qr-code-display h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+}
+.qr-code-display p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+.qr-code-display a {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: 500;
+  word-break: break-all;
+}
+.qr-code-display a:hover {
+  text-decoration: underline;
+}
+
+
+/* Loading animation */
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .App {
+    padding: 1rem 0.5rem; /* Less horizontal padding */
+    height: 100vh; /* Ensure it takes full viewport height */
+  }
+
+  .header {
+    margin-bottom: 1rem;
+  }
+  .header h1 {
+    font-size: 1.5rem;
+  }
+
+  .controls-section {
+    flex-direction: column; /* Stack controls on mobile */
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .language-selector-component {
+    width: 100%; /* Full width for select on mobile */
+  }
+  .language-selector-component label {
+    margin-bottom: 0.25rem;
+  }
+  .language-selector-component select {
+    padding: 0.6rem;
+    font-size: 0.875rem;
+  }
+
+  .record-btn {
+    padding: 0.75rem 1.25rem;
+    min-width: auto; /* Allow button to shrink */
+    width: 100%; /* Full width for record button */
+    font-size: 0.875rem;
+  }
+
+  .transcript-display {
+    padding: 1rem; /* Less padding on mobile */
+    min-height: 0; /* Allow flex to shrink it */
+    flex: 1; /* Take available space */
+  }
+
+  .message-bubble {
+    max-width: 90%;
+    padding: 0.75rem;
+  }
+
+  .message-text {
+    font-size: 0.875rem;
+  }
+
+  .qr-code-display {
+    /* Keep it at the bottom, but not fixed to avoid overlap with virtual keyboard issues */
+    margin-top: 1rem;
+    padding: 0.75rem;
+  }
+}
