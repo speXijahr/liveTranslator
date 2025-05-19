@@ -2,20 +2,19 @@
   "name": "voice-transcription-mvp-root",
   "version": "1.0.0",
   "description": "Voice transcription MVP with real-time translation",
-  "main": "server/server.js",
-  "private": true,
+  "private": true, 
+  "workspaces": [ 
+    "client",
+    "server"
+  ],
   "scripts": {
-    "start": "node server/server.js",
-    "start:server:prod": "NODE_ENV=production node server/server.js",
-    "build:client": "cd client && npm run build",
-    "build": "npm run build:client",
-    "dev": "concurrently \"npm run start\" \"cd client && npm start\"",
+    "start:server": "npm start --workspace=server",
+    "start:server:prod": "npm run start:prod --workspace=server", 
+    "build:client": "npm run build --workspace=client", 
+    "build": "npm run build:client", 
 
-    "install:client": "npm install --prefix client",
-    "install:server": "npm install --prefix server",
-    "postinstall": "npm run install:client && npm run install:server",
-
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"", 
+    "test": "npm test --workspaces --if-present" 
   },
   "devDependencies": {
     "concurrently": "^8.0.0"
