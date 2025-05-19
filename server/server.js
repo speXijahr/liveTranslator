@@ -21,24 +21,37 @@ const SUPPORTED_LANGUAGES = ['EN-US', 'IT', 'CS'];
 
 const app = express();
 const server = http.createServer(app);
+
+// Configure CORS based on environment
 const io = new Server(server, {
     cors: {
         origin: process.env.NODE_ENV === 'production' ? false : "http://localhost:3000",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
+// Add these logs at the top or before PORT is defined
+console.log(`SERVER_LOG: Initial process.env.PORT from environment is [${process.env.PORT}]`);
 const PORT = process.env.PORT || 3001;
+console.log(`SERVER_LOG: Server will be listening on port [${PORT}]`);
 
 // Serve static files from the React app in production
 if (process.env.NODE_ENV === 'production') {
+    console.log('SERVER_LOG: Running in production mode');
     const buildPath = path.join(__dirname, '../client/build');
+    console.log(`SERVER_LOG: Serving static files from ${buildPath}`);
+    
+    // Serve static files
     app.use(express.static(buildPath));
     
     // Handle all other routes by serving index.html
-    app.use((req, res) => {
+    app.get('*', (req, res) => {
+        console.log(`SERVER_LOG: Serving index.html for route: ${req.path}`);
         res.sendFile(path.join(buildPath, 'index.html'));
     });
+} else {
+    console.log('SERVER_LOG: Running in development mode');
 }
 
 // Helper function to map language codes to DeepL format
@@ -189,7 +202,6 @@ io.on('connection', (socket) => {
         }
     });
 });
-
 server.listen(PORT, () => {
     console.log(`DeepL Translator ${translator ? 'INITIALIZED' : 'NOT INITIALIZED (check DEEPL_AUTH_KEY)'}`);
     console.log(`Server listening on *:${PORT}`);
