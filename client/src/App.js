@@ -6,7 +6,10 @@ import TranscriptDisplay from './components/TranscriptDisplay';
 import QRCodeDisplay from './components/QRCodeDisplay';
 import './App.css'; // Ensure this is imported
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
+// Determine the server URL based on environment
+const SERVER_URL = process.env.NODE_ENV === 'production' 
+  ? window.location.origin  // Use the same origin in production
+  : 'http://localhost:8080'; // Use localhost in development
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognitionInstance;

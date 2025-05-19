@@ -22,18 +22,22 @@ const SUPPORTED_LANGUAGES = ['EN-US', 'IT', 'CS'];
 const app = express();
 const server = http.createServer(app);
 
-// Configure CORS based on environment
+// Configure CORS and WebSocket settings
 const io = new Server(server, {
     cors: {
-        origin: process.env.NODE_ENV === 'production' ? false : "http://localhost:3000",
+        origin: process.env.NODE_ENV === 'production' ? true : "http://localhost:8080",
         methods: ["GET", "POST"],
         credentials: true
-    }
+    },
+    transports: ['websocket', 'polling'],
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 // Add these logs at the top or before PORT is defined
 console.log(`SERVER_LOG: Initial process.env.PORT from environment is [${process.env.PORT}]`);
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 console.log(`SERVER_LOG: Server will be listening on port [${PORT}]`);
 
 // Serve static files from the React app in production
