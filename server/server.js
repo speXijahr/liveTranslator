@@ -23,17 +23,21 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:3000",
+        origin: process.env.NODE_ENV === 'production' ? false : "http://localhost:3000",
         methods: ["GET", "POST"]
     }
 });
 
 const PORT = process.env.PORT || 3001;
 
+// Serve static files from the React app in production
 if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../client/build')));
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+    const buildPath = path.join(__dirname, '../client/build');
+    app.use(express.static(buildPath));
+    
+    // Handle all other routes by serving index.html
+    app.use((req, res) => {
+        res.sendFile(path.join(buildPath, 'index.html'));
     });
 }
 
