@@ -46,7 +46,11 @@ if (process.env.NODE_ENV === 'production') {
     app.use(express.static(buildPath));
     
     // Handle all other routes by serving index.html
-    app.get('*', (req, res) => {
+    app.use((req, res, next) => {
+        // Skip if the request is for a static file
+        if (req.path.startsWith('/static/') || req.path.includes('.')) {
+            return next();
+        }
         console.log(`SERVER_LOG: Serving index.html for route: ${req.path}`);
         res.sendFile(path.join(buildPath, 'index.html'));
     });
