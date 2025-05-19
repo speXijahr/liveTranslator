@@ -6,9 +6,15 @@
     "server": "npm start --prefix server",
     "client": "npm start --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
+
+    "install:client": "npm install --prefix client",
+    "install:server": "npm install --prefix server",
+    "postinstall": "npm run install:client && npm run install:server",
+
     "build:client": "npm run build --prefix client",
     "start:server:prod": "NODE_ENV=production node server/server.js",
     "start": "npm run build:client && npm run start:server:prod",
+
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
