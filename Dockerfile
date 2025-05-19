@@ -13,8 +13,10 @@ COPY package-lock.json* ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
 
-# Install dependencies
-RUN npm ci
+# Install dependencies with debugging
+RUN npm install --verbose && \
+    cd client && npm install --verbose && cd .. && \
+    cd server && npm install --verbose && cd ..
 
 # Copy source code
 COPY . .
@@ -40,9 +42,10 @@ COPY package-lock.json* ./
 COPY client/package.json ./client/
 COPY server/package.json ./server/
 
-# Install ONLY production dependencies for all workspaces.
-# `--omit=dev` ensures no devDependencies are installed.
-RUN npm ci --omit=dev --workspaces --if-present
+# Install production dependencies
+RUN npm install --omit=dev --verbose && \
+    cd client && npm install --omit=dev --verbose && cd .. && \
+    cd server && npm install --omit=dev --verbose && cd ..
 
 # Copy built client and server code
 COPY --from=builder /app/client/build ./client/build
