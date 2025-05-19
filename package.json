@@ -7,8 +7,8 @@
     "client": "npm start --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "build:client": "npm run build --prefix client",
-    "start:server:prod": "NODE_ENV=production node server/index.js",
-    "start": "npm run build:client && npm run start:server:prod", // <-- This is your main production start command
+    "start:server:prod": "NODE_ENV=production node server/server.js",
+    "start": "npm run build:client && npm run start:server:prod",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
