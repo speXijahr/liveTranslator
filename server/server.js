@@ -1,216 +1,75 @@
 // server/server.js
-require('dotenv').config(); // Load environment variables from .env file
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
-const deepl = require('deepl-node'); // Import DeepL
 
-// --- DeepL Configuration ---
-const DEEPL_AUTH_KEY = process.env.DEEPL_AUTH_KEY;
-if (!DEEPL_AUTH_KEY) {
-    console.warn("DEEPL_AUTH_KEY environment variable not set. Translation will not work.");
-}
-const translator = DEEPL_AUTH_KEY ? new deepl.Translator(DEEPL_AUTH_KEY) : null;
+// Configurations
+const serverConfig = require('./config/serverConfig');
+const corsOptions = require('./config/corsConfig');
+const socketIoOptions = require('./config/socketIoOptions');
+const { isDeeplConfigured } = require('./config/deeplConfig'); // Only need to know if it's set up
 
-// Supported languages for translation (DeepL format)
-const SUPPORTED_LANGUAGES = ['EN-US', 'IT', 'CS'];
-// --------------------------
+// Socket Event Handlers
+const roomEventHandlers = require('./socketHandlers/roomEvents');
+const { handleTranscribeData } = require('./socketHandlers/transcriptionEvents');
+const { handleRequestTranslation } = require('./socketHandlers/translationEvents');
+const { handleDisconnect } = require('./socketHandlers/disconnectEvents');
 
+// --- Initialize Express, HTTP Server, Socket.IO ---
 const app = express();
-const server = http.createServer(app);
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, { ...socketIoOptions, cors: corsOptions });
 
-// Configure CORS and WebSocket settings
-const io = new Server(server, {
-    cors: {
-        origin: process.env.NODE_ENV === 'production' ? true : "http://localhost:8080",
-        methods: ["GET", "POST"],
-        credentials: true
-    },
-    transports: ['websocket', 'polling'],
-    allowEIO3: true,
-    pingTimeout: 60000,
-    pingInterval: 25000
+// --- Server Error Handling ---
+httpServer.on('error', (error) => console.error('HTTP Server error:', error));
+io.engine.on('connection_error', (err) => {
+    console.error(`Socket.IO Engine Connection Error: Code ${err.code}, Message: ${err.message}, Context: ${err.context}`);
 });
 
-// Add these logs at the top or before PORT is defined
-console.log(`SERVER_LOG: Initial process.env.PORT from environment is [${process.env.PORT}]`);
-const PORT = process.env.PORT || 8080;
-console.log(`SERVER_LOG: Server will be listening on port [${PORT}]`);
+console.log(`SERVER_LOG: Server will be listening on port [${serverConfig.PORT}]`);
+console.log(`SERVER_LOG: Running in ${serverConfig.NODE_ENV} mode`);
 
-// Serve static files from the React app in production
-if (process.env.NODE_ENV === 'production') {
-    console.log('SERVER_LOG: Running in production mode');
+// --- Static File Serving for Production ---
+if (serverConfig.NODE_ENV === 'production') {
     const buildPath = path.join(__dirname, '../client/build');
     console.log(`SERVER_LOG: Serving static files from ${buildPath}`);
-    
-    // Serve static files
     app.use(express.static(buildPath));
-    
-    // Handle all other routes by serving index.html
     app.use((req, res, next) => {
-        // Skip if the request is for a static file
-        if (req.path.startsWith('/static/') || req.path.includes('.')) {
+        if (req.path.startsWith('/static/') || req.path.includes('.') || req.path.startsWith('/api/')) { // Exclude API routes if any
             return next();
         }
-        console.log(`SERVER_LOG: Serving index.html for route: ${req.path}`);
         res.sendFile(path.join(buildPath, 'index.html'));
     });
-} else {
-    console.log('SERVER_LOG: Running in development mode');
 }
 
-// Helper function to map language codes to DeepL format
-function mapToDeepLLang(lang) {
-    // Map Web Speech API language codes to DeepL format
-    const langMap = {
-        'en-US': 'EN',
-        'it-IT': 'IT',
-        'cs-CZ': 'CS'
-    };
-    return langMap[lang] || lang;
-}
-
-// Helper function to translate text to all supported languages
-async function translateToAllLanguages(text, sourceLang) {
-    const translations = {};
-    const sourceLangDeepL = mapToDeepLLang(sourceLang);
-    
-    // Don't translate if source language is already in target languages
-    if (SUPPORTED_LANGUAGES.includes(sourceLangDeepL)) {
-        translations[sourceLangDeepL] = { text };
-    }
-
-    // Translate to all other supported languages
-    for (const targetLang of SUPPORTED_LANGUAGES) {
-        if (targetLang === sourceLangDeepL) continue; // Skip if source language matches target
-        
-        try {
-            console.log(`Translating from ${sourceLangDeepL} to ${targetLang}`);
-            const result = await translator.translateText(text, sourceLangDeepL, targetLang);
-            translations[targetLang] = { text: result.text };
-        } catch (error) {
-            console.error(`Error translating to ${targetLang}:`, error);
-            translations[targetLang] = { error: error.message };
-        }
-    }
-    
-    return translations;
-}
-
-// rooms[roomId] = { speakerSocketId: null, viewers: Set(), messages: [] };
-const rooms = {};
-
+// --- Socket.IO Connection Logic ---
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    console.log(`Socket connected: ${socket.id}`);
 
-    socket.on('create_room', (callback) => {
-        const roomId = uuidv4();
-        rooms[roomId] = {
-            speakerSocketId: socket.id,
-            viewers: new Set(),
-            messages: [] // Initialize messages array for the room
-        };
-        socket.join(roomId);
-        console.log(`Speaker ${socket.id} created and joined room ${roomId}`);
-        callback(roomId);
-    });
+    // Room events
+    // If you keep explicit create_room:
+    socket.on('create_room', (data, callback) => roomEventHandlers.handleCreateRoom(socket, io, data, callback));
+    socket.on('join_room', (data, callback) => roomEventHandlers.handleJoinRoom(socket, io, data, callback));
+    socket.on('get_rooms', (callback) => roomEventHandlers.handleGetRooms(callback));
 
-    socket.on('join_room', ({ roomId }, callback) => {
-        if (rooms[roomId]) {
-            socket.join(roomId);
-            if (rooms[roomId].speakerSocketId === socket.id) {
-                console.log(`Speaker ${socket.id} re-confirmed in room ${roomId}`);
-                callback({ success: true, isSpeaker: true, messages: rooms[roomId].messages });
-            } else {
-                rooms[roomId].viewers.add(socket.id);
-                console.log(`Viewer ${socket.id} joined room ${roomId}`);
-                callback({ success: true, isSpeaker: false, messages: rooms[roomId].messages });
-            }
-        } else {
-            console.log(`Room ${roomId} does not exist for join attempt by ${socket.id}`);
-            callback({ success: false, message: 'Room not found.' });
-        }
-    });
+    // Transcription event
+    socket.on('transcribe_data', (data) => handleTranscribeData(socket, io, data));
 
-    // Speaker sends transcription data
-    socket.on('transcribe_data', async ({ roomId, transcript, sourceLang }) => {
-        if (rooms[roomId] && rooms[roomId].speakerSocketId === socket.id) {
-            try {
-                // Get translations for all supported languages
-                const translations = await translateToAllLanguages(transcript, sourceLang);
-                
-                const newMessage = {
-                    id: uuidv4(),
-                    text: transcript,
-                    sender: 'Speaker',
-                    sourceLang: sourceLang,
-                    translations: translations,
-                    timestamp: Date.now()
-                };
-                
-                rooms[roomId].messages.push(newMessage);
-                io.to(roomId).emit('new_transcription', newMessage);
-            } catch (error) {
-                console.error("Error processing transcription:", error);
-                socket.emit('transcription_error', { error: "Failed to process transcription" });
-            }
-        } else {
-            console.warn(`Unauthorized transcript from ${socket.id} for room ${roomId}.`);
-        }
-    });
+    // Translation event
+    socket.on('request_translation', (data) => handleRequestTranslation(socket, data));
 
-    // Viewer requests translation for a specific message (now just returns existing translation)
-    socket.on('request_translation', ({ roomId, messageId, targetLang }) => {
-        if (rooms[roomId] && (rooms[roomId].viewers.has(socket.id) || rooms[roomId].speakerSocketId === socket.id)) {
-            const message = rooms[roomId].messages.find(msg => msg.id === messageId);
-            
-            if (message && message.translations && message.translations[targetLang]) {
-                socket.emit('translated_message', {
-                    originalMessageId: messageId,
-                    translatedText: message.translations[targetLang].text,
-                    targetLang: targetLang
-                });
-            } else {
-                socket.emit('translation_error', { 
-                    messageId, 
-                    error: "Translation not available for this language" 
-                });
-            }
-        } else {
-            console.warn(`Unauthorized translation request from ${socket.id} for room ${roomId}`);
-        }
-    });
+    // Disconnect event
+    socket.on('disconnect', () => handleDisconnect(socket, io));
 
-    socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
-        for (const roomId in rooms) {
-            if (rooms[roomId].speakerSocketId === socket.id) {
-                console.log(`Speaker ${socket.id} left room ${roomId}. Cleaning up.`);
-                io.to(roomId).emit('speaker_left', { message: 'The speaker has left. Session closed.' });
-                try {
-                    const socketsInRoom = io.sockets.adapter.rooms.get(roomId);
-                    if (socketsInRoom) {
-                        socketsInRoom.forEach(socketIdInRoom => {
-                            const Ssocket = io.sockets.sockets.get(socketIdInRoom);
-                            if (Ssocket) Ssocket.leave(roomId);
-                        });
-                    }
-                } catch (e) { console.error("Error making sockets leave room:", e); }
-                delete rooms[roomId];
-                console.log(`Room ${roomId} deleted.`);
-                break;
-            } else if (rooms[roomId].viewers.has(socket.id)) {
-                rooms[roomId].viewers.delete(socket.id);
-                console.log(`Viewer ${socket.id} left room ${roomId}`);
-                break;
-            }
-        }
+    // Generic error handler for this socket
+    socket.on('error', (error) => {
+        console.error(`Socket error on ${socket.id}:`, error);
     });
 });
-server.listen(PORT, () => {
-    console.log(`DeepL Translator ${translator ? 'INITIALIZED' : 'NOT INITIALIZED (check DEEPL_AUTH_KEY)'}`);
-    console.log(`Server listening on *:${PORT}`);
+
+// --- Start Server ---
+httpServer.listen(serverConfig.PORT, () => {
+    console.log(`DeepL Translator ${isDeeplConfigured ? 'INITIALIZED' : 'NOT INITIALIZED (check DEEPL_AUTH_KEY)'}`);
+    console.log(`Server listening on *:${serverConfig.PORT}`);
 });

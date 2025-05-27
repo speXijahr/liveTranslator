@@ -1,376 +1,236 @@
 // client/src/App.js
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import io from 'socket.io-client';
-import ReusableLanguageSelector from './components/ReusableLanguageSelector'; // Updated import
+import React, { useState, useEffect, useCallback } from 'react';
+
+// Config & Constants
+import {
+    SERVER_URL,
+    SPEAKER_LANGUAGES, VIEWER_LANGUAGES,
+    DEFAULT_SPEAKER_LANG, DEFAULT_VIEWER_LANG
+} from './config/constants';
+
+// Hooks
+import useSocketManager from './hooks/useSocketManager';
+import useRoomManager from './hooks/useRoomManager';
+import useSpeechRecognition from './hooks/useSpeechRecognition';
+
+// Components
+import ReusableLanguageSelector from './components/ReusableLanguageSelector';
 import TranscriptDisplay from './components/TranscriptDisplay';
 import QRCodeDisplay from './components/QRCodeDisplay';
-import './App.css'; // Ensure this is imported
+import RoomSelectionScreen from './components/RoomSelectionScreen';
+import CreateRoomForm from './components/CreateRoomForm';
+import Controls from './components/Controls';
 
-// Determine the server URL based on environment
-const SERVER_URL = process.env.NODE_ENV === 'production' 
-  ? window.location.origin  // Use the same origin in production
-  : 'http://localhost:8080'; // Use localhost in development
+import './App.css';
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognitionInstance;
-if (SpeechRecognition) {
-    recognitionInstance = new SpeechRecognition();
-    recognitionInstance.continuous = true; // Keep listening even after a pause
-    recognitionInstance.interimResults = false; // We only want final results
-} else {
-    console.error("Speech Recognition API not supported in this browser.");
-}
+// Helper for message processing (can be moved to a utils file)
+// Make sure 'isSpeaker' is accessible if processMessage needs it,
+// or simplify if this function is ONLY for server messages which are always 'speaker'
+// For messages from 'new_transcription', they are by definition from the speaker.
+const processMessage = (msgFromServer, currentSpeakerLangForMsg) => {
+    // Defensive check for msgFromServer
+    const messageData = msgFromServer && typeof msgFromServer === 'object' ? msgFromServer : {};
 
-// Define language options centrally
-const SPEAKER_LANGUAGES = [
-  { value: 'en-US', label: 'English (US)' },
-  { value: 'it-IT', label: 'Italian' },
-  { value: 'cs-CZ', label: 'Czech' },
-  // Add more speaker languages as needed
-];
-
-const VIEWER_LANGUAGES = [
-  { value: '', label: 'Original Language' }, // Option to view original
-  { value: 'EN-US', label: 'English (US)' }, // Note: Ensure backend expects these codes (e.g. 'EN-US' vs 'en-US')
-  { value: 'IT', label: 'Italian' },
-  { value: 'CS', label: 'Czech' },
-  // Add more viewer languages as needed
-];
-
+    return {
+        id: messageData.id || `client-${Date.now()}-${Math.random()}`, // Generate ID if missing
+        text: messageData.text || '', // Original transcript
+        sourceLang: messageData.sourceLang || currentSpeakerLangForMsg,
+        senderType: 'speaker', // Messages from 'new_transcription' are from the speaker
+        translations: messageData.translations && typeof messageData.translations === 'object' ? messageData.translations : {},
+        isTranslating: messageData.isTranslating && typeof messageData.isTranslating === 'object' ? messageData.isTranslating : {},
+        timestamp: messageData.timestamp || Date.now(),
+    };
+};
 
 function App() {
-    const [socket, setSocket] = useState(null);
-    const [isSpeaker, setIsSpeaker] = useState(false);
-    const [roomId, setRoomId] = useState(null);
-    const [isTranscribing, setIsTranscribing] = useState(false);
-    const [selectedLang, setSelectedLang] = useState(SPEAKER_LANGUAGES[0].value); // Speaker's input language
-    const [selectedViewerLang, setSelectedViewerLang] = useState(VIEWER_LANGUAGES[0].value); // Viewer's target translation language
-    const [messages, setMessages] = useState([]); // Ensure this is always an array
-    const [error, setError] = useState('');
-    const [status, setStatus] = useState('Initializing...');
+    // Core application state
+    const [messages, setMessages] = useState([]);
+    const [appError, setAppError] = useState('');
+    const [appStatus, setAppStatus] = useState('Initializing...');
+    const [selectedSpeakerLang, setSelectedSpeakerLang] = useState(DEFAULT_SPEAKER_LANG);
+    const [selectedViewerLang, setSelectedViewerLang] = useState(DEFAULT_VIEWER_LANG);
 
-    const recognitionRef = useRef(recognitionInstance);
+    // --- Initialize Hooks ---
 
-    // Helper to ensure messages have a consistent structure
-    const processMessage = (msg) => ({
-        id: msg.id || `client-${Date.now()}-${Math.random()}`, // Fallback ID, server ID preferred
-        text: msg.text || '',
-        sourceLang: msg.sourceLang || selectedLang,
-        senderType: msg.senderType || 'speaker', // Default to speaker for new transcriptions
-        translations: msg.translations || {},
-        isTranslating: msg.isTranslating || {},
-        timestamp: msg.timestamp || Date.now(),
+    const { socket, socketStatus, socketError } = useSocketManager(SERVER_URL, {
+        // Pass callbacks for socket events that App.js needs to react to directly
+        onNewTranscription: (messageFromServer) => {
+            setMessages(prev => [...prev, processMessage(messageFromServer, selectedSpeakerLang)]);
+        },
+        onSpeakerLeft: (data) => {
+            setAppError(data.message || "Speaker has left.");
+            setAppStatus('Session ended by speaker.');
+            // Additional logic if needed, e.g. if current user was the speaker
+        },
+        onTranslatedMessage: ({ originalMessageId, translatedText, targetLang }) => {
+            setMessages(prev => prev.map(msg => msg.id === originalMessageId ? {
+                ...msg,
+                translations: { ...(msg.translations || {}), [targetLang]: translatedText },
+                isTranslating: { ...(msg.isTranslating || {}), [targetLang]: false }
+            } : msg));
+        },
+        onTranslationError: ({ messageId, error: translationErrText, targetLang }) => {
+            console.error(`Translation error for ${messageId} to ${targetLang}:`, translationErrText);
+            setAppError(`Translation failed for a message.`);
+            setMessages(prev => prev.map(msg => msg.id === messageId ? {
+                ...msg, isTranslating: { ...(msg.isTranslating || {}), [targetLang]: false }
+            } : msg));
+            setTimeout(() => setAppError(''), 5000);
+        }
     });
 
-    const createNewRoom = useCallback((sock) => {
-        sock.emit('create_room', (newRoomId) => {
-            setRoomId(newRoomId);
-            setIsSpeaker(true);
-            setMessages([]); // Clear messages for new room
-            setStatus('New room created. You are the Speaker.');
-            window.history.replaceState({}, '', `/?roomId=${newRoomId}`);
-            if (recognitionRef.current) {
-                recognitionRef.current.lang = selectedLang;
-            }
-            setError('');
-            setSelectedViewerLang(VIEWER_LANGUAGES[0].value); // Reset viewer lang choice
-        });
-    }, [selectedLang]); // Keep selectedLang dependency
+    const onRoomJoined = useCallback((details) => {
+        setMessages(details.messages || []);
+        if (!details.isSpeaker) {
+            setSelectedViewerLang(details.preferredLang || DEFAULT_VIEWER_LANG);
+        }
+        setAppStatus(details.isSpeaker ? 'Session started as Speaker.' : 'Joined as Viewer.');
+        setAppError(details.isSpeaker && !details.messageFromJoin ? '' : (details.messageFromJoin || ''));
+    }, [setMessages, setSelectedViewerLang, setAppStatus, setAppError]);
+
+
+    const onRoomError = useCallback((errMessage) => {
+        setAppError(errMessage);
+    }, [setAppError]); // Dependency is a setter (stable)
+
+    const onRoomsListed = useCallback((roomList) => {
+        // console.log('App.js: Rooms listed:', roomList);
+        // You can add logic here if App.js needs to react to the room list directly
+        // For example, if no rooms and not in a room, set a specific appStatus
+        // if (roomList.length === 0 && !roomId) { // roomId would need to be a dependency if used
+        //   setAppStatus("No active rooms. Feel free to create one!");
+        // }
+    }, []); // Add dependencies if it uses any state/props from App.js
+    
+
+    const {
+        roomId,
+        isSpeaker,
+        rooms,
+        showSpeakerSetupForm,
+        initiateSessionAsSpeaker,
+        joinSessionAsViewer,
+        handleShowSpeakerSetupForm,
+        status: roomStatus,
+        error: roomErrorManager // Renamed to avoid conflict with appError if needed
+    } = useRoomManager(socket, {
+        onRoomJoined, // Pass the memoized callback
+        onRoomError,  // Pass the memoized callback
+        onRoomsListed // Pass the memoized callback
+    });
+
+      // NEW: Memoize onTranscriptionResult
+      const onTranscriptionResult = useCallback((transcript) => {
+        // Ensure socket, roomId, isSpeaker, selectedSpeakerLang are stable or correctly in deps
+        // If they are props or state from App.js, they should be in this useCallback's dependency array
+        if (socket && roomId && isSpeaker && transcript) {
+            socket.emit('transcribe_data', {
+                roomId,
+                transcript,
+                sourceLang: selectedSpeakerLang,
+            });
+        }
+    }, [socket, roomId, isSpeaker, selectedSpeakerLang]); // Add dependencies used by this callback
+
+    
+    const handleRecognitionError = useCallback((errorMessage) => {
+        setAppError(prevError => `${prevError} SpeechErr: ${errorMessage}`); // Example: append or set
+    }, [setAppError]);
+
+
+    const {
+        isTranscribing, startTranscription, stopTranscription,
+        isApiSupported: speechApiSupported,
+        recognitionError,
+        recognitionStatus
+    } = useSpeechRecognition({
+        isSpeaker,
+        currentLanguage: selectedSpeakerLang,
+        onTranscriptionResult: onTranscriptionResult, // Pass the memoized version
+        onRecognitionError: handleRecognitionError, // Pass memoized if used
+        // onRecognitionStatusChange: memoizedHandleRecognitionStatusChange, // If used
+    });
+
+
+
+    if (roomId && isSpeaker) { // Only log if we intend to show speaker controls
+        console.log('APP_JS: Preparing props for Controls -> isSpeaker:', isSpeaker, 'isTranscribing:', isTranscribing, 'canRecord:', speechApiSupported, 'onStart is func:', typeof startTranscription === 'function');
+    }
+
+    // --- Aggregate status and error handling ---
+    useEffect(() => {
+        // Prioritize errors from different sources
+        if (socketError) setAppError(socketError);
+        else if (roomErrorManager) setAppError(roomErrorManager);
+        else if (recognitionError) setAppError(recognitionError);
+        // else setAppError(''); // Be careful not to clear errors too eagerly
+    }, [socketError, roomErrorManager, recognitionError]);
 
     useEffect(() => {
-        const newSocket = io(SERVER_URL);
-        setSocket(newSocket);
-        setStatus('Connecting to server...');
-
-        const params = new URLSearchParams(window.location.search);
-        const existingRoomId = params.get('roomId');
-
-        const joinOrCreateRoom = (id) => {
-            if (id) {
-                newSocket.emit('join_room', { roomId: id }, (response) => {
-                    if (response.success) {
-                        const initialMessages = Array.isArray(response.messages) ? response.messages.map(processMessage) : [];
-                        setRoomId(id);
-                        setIsSpeaker(response.isSpeaker);
-                        setMessages(initialMessages);
-                        setStatus(response.isSpeaker ? 'Rejoined as Speaker' : 'Joined as Viewer');
-                        if (response.isSpeaker && recognitionRef.current) {
-                            recognitionRef.current.lang = selectedLang; // Use current selectedLang
-                        }
-                         // If viewer, set their language preference if they had one, or default
-                        setSelectedViewerLang(response.preferredLang || VIEWER_LANGUAGES[0].value);
-                    } else {
-                        setError(`Room "${id}" not found. Creating a new room.`);
-                        createNewRoom(newSocket);
-                    }
-                });
-            } else {
-                createNewRoom(newSocket);
-            }
-        };
-
-        newSocket.on('connect', () => {
-            setStatus('Connected. Joining room...');
-            joinOrCreateRoom(existingRoomId);
-        });
-
-        newSocket.on('new_transcription', (messageFromServer) => {
-            // Assuming server sends message with id, text, sourceLang
-            setMessages(prevMessages => [...prevMessages, processMessage(messageFromServer)]);
-        });
-
-        newSocket.on('speaker_left', (data) => {
-            setError(data.message || "Speaker has left the session. Refresh to start/join a new session.");
-            setIsTranscribing(false);
-            if (recognitionRef.current) recognitionRef.current.stop();
-            // Don't set isSpeaker to false if the current user *was* the speaker.
-            // Instead, perhaps disable controls or indicate room is inactive.
-            // For a viewer, this is fine.
-            if (!isSpeaker) { // Only clear messages if this user is a viewer
-                setMessages([]);
-            }
-            setStatus('Session ended by speaker.');
-        });
-
-        newSocket.on('translated_message', ({ originalMessageId, translatedText, targetLang }) => {
-            setMessages(prevMessages =>
-                prevMessages.map(msg => {
-                    if (msg.id === originalMessageId) {
-                        return {
-                            ...msg,
-                            translations: {
-                                ...(msg.translations || {}),
-                                [targetLang]: translatedText // Store only the text
-                            },
-                            isTranslating: {
-                                ...(msg.isTranslating || {}),
-                                [targetLang]: false
-                            }
-                        };
-                    }
-                    return msg;
-                })
-            );
-        });
-
-        newSocket.on('translation_error', ({ messageId, error: translationError, targetLang }) => {
-            console.error(`Translation error for message ${messageId} to ${targetLang}:`, translationError);
-            setError(`Translation failed for a message.`); // Keep it brief
-            setMessages(prevMessages =>
-                prevMessages.map(msg => {
-                    if (msg.id === messageId) {
-                        return {
-                            ...msg,
-                            isTranslating: {
-                                ...(msg.isTranslating || {}),
-                                [targetLang]: false // Reset specific language flag
-                            }
-                        };
-                    }
-                    return msg;
-                })
-            );
-            setTimeout(() => setError(''), 5000); // Clear error after 5s
-        });
-
-        newSocket.on('connect_error', (err) => {
-            console.error('Connection Error:', err);
-            setError('Failed to connect to the server. Please check your connection or try again later.');
-            setStatus('Connection failed.');
-        });
-
-        newSocket.on('disconnect', (reason) => {
-            setStatus(`Disconnected: ${reason}. Attempting to reconnect...`);
-            setError('Lost connection to the server.');
-             // Optionally, implement reconnection logic or inform user
-        });
-
-        return () => {
-            newSocket.disconnect();
-            if (recognitionRef.current && (isTranscribing || (recognitionRef.current.readyState === 1 /* listening */))) {
-                recognitionRef.current.stop();
-            }
-        };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [createNewRoom]); // createNewRoom is memoized and its deps are handled
-
-
-    // Speech Recognition effect
-    useEffect(() => {
-        if (!recognitionRef.current || !isSpeaker) {
-            if (isTranscribing && recognitionRef.current) {
-                recognitionRef.current.stop(); // Ensure stop if no longer speaker
-            }
-            setIsTranscribing(false);
-            return;
+        // More sophisticated status aggregation
+        if (socketStatus && socketStatus !== 'Connected' && socketStatus !== 'Initializing...') {
+            setAppStatus(socketStatus);
+        } else if (roomStatus) {
+            setAppStatus(roomStatus);
+        } else if (isSpeaker && recognitionError) { // Show recognition error as status if speaker
+            setAppStatus(`Mic status: ${recognitionError}`);
+        } else if (isSpeaker && isTranscribing) {
+            setAppStatus('Listening...');
+        } else if (isSpeaker) {
+            setAppStatus('Ready to record.');
+        } else if (roomId) {
+            setAppStatus('Viewing transcriptions.');
+        } else if (socketStatus === 'Connected') {
+            setAppStatus('Select or create a room.');
+        } else {
+            setAppStatus(socketStatus || 'Initializing...');
         }
+    }, [socketStatus, roomStatus, recognitionError, isSpeaker, isTranscribing, roomId]);
 
-        const rec = recognitionRef.current;
-        rec.lang = selectedLang; // Always set the language before starting
-
-        rec.onstart = () => {
-            setIsTranscribing(true);
-            setStatus('Listening...');
-            setError('');
-        };
-
-        rec.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
-            let specificError = `Speech error: ${event.error}.`;
-            if (event.error === 'no-speech') {
-                specificError += " No speech detected. Please ensure your mic is working and you are speaking.";
-            } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                specificError = "Microphone access denied. Please allow microphone access in your browser settings and refresh the page.";
-                setIsTranscribing(false); // Stop trying if permission denied
-            } else if (event.error === 'aborted') {
-                specificError += " Recognition aborted. This can happen if you switch languages rapidly.";
-            } else {
-                // For other errors, we might not want to stop transcription immediately
-                // as some might be transient.
-                // setIsTranscribing(false); // Uncomment if you want to stop on any error
-            }
-            setError(specificError);
-        };
-
-        rec.onend = () => {
-            const shouldRestart = isTranscribing && isSpeaker && !error.includes("access denied");
-            setIsTranscribing(false); // Set to false first
-
-            if (shouldRestart) {
-                 // Brief pause before attempting to restart, to avoid rapid fire errors
-                setTimeout(() => {
-                    if (isSpeaker && recognitionRef.current) { // Check isSpeaker again, in case it changed
-                         try {
-                            if (recognitionRef.current.lang !== selectedLang) { // Ensure lang is current
-                                recognitionRef.current.lang = selectedLang;
-                            }
-                            recognitionRef.current.start();
-                        } catch (e) {
-                            console.error("Error restarting recognition:", e);
-                            setError("Could not restart voice recognition.");
-                        }
-                    }
-                }, 250);
-            } else if (isSpeaker) {
-                setStatus('Ready to record');
-            } else {
-                setStatus('Viewing');
-            }
-        };
-
-        rec.onresult = (event) => {
-            let finalTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript;
-                }
-            }
-
-            if (finalTranscript.trim() && socket && roomId && isSpeaker) {
-                socket.emit('transcribe_data', {
-                    roomId,
-                    transcript: finalTranscript.trim(),
-                    sourceLang: selectedLang, // Send the source language
-                });
-            }
-        };
-        // Cleanup function
-        return () => {
-            if (rec) {
-                rec.onstart = null;
-                rec.onresult = null;
-                rec.onerror = null;
-                rec.onend = null;
-                if (isTranscribing || (rec.readyState === 1 /* Listening state */)) {
-                    rec.abort(); // Use abort for more immediate stop
-                }
-            }
-        };
-    }, [socket, roomId, isSpeaker, selectedLang, error, isTranscribing]); // isTranscribing added to deps for onend logic to correctly assess restart
-
-    const handleStartTranscription = useCallback(() => {
-        if (!recognitionRef.current) {
-            setError("Speech Recognition is not available on this browser.");
-            return;
+    const handleAttemptBecomeSpeakerForExistingRoom = useCallback((roomIdForSpeakerAttempt) => {
+        const password = prompt(`Enter password to become speaker for room "${roomIdForSpeakerAttempt}":`);
+        if (password) { // User entered something and didn't cancel
+            initiateSessionAsSpeaker(roomIdForSpeakerAttempt, password);
+        } else if (password === "") { // User entered blank password
+            setAppError("Password cannot be empty to become a speaker.");
+            setTimeout(() => setAppError(''), 5000); // Clear error after 5s
         }
-        if (!isSpeaker || !socket || !roomId) {
-            setError("Cannot start: Not designated as speaker or not connected to a room.");
-            return;
-        }
-        if (isTranscribing) return;
-
-        try {
-            setError('');
-            // Language is set in the useEffect for recognition
-            if (recognitionRef.current.lang !== selectedLang) {
-                recognitionRef.current.lang = selectedLang;
-            }
-            recognitionRef.current.start();
-        } catch (e) {
-            console.error("Error starting recognition:", e);
-            setError("Failed to start voice recognition. Check microphone permissions or try a different browser.");
-            setIsTranscribing(false);
-        }
-    }, [isSpeaker, socket, roomId, selectedLang, isTranscribing]);
-
-    const handleStopTranscription = useCallback(() => {
-        setIsTranscribing(false); // This will trigger onend logic in useEffect to stop
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-        }
-        setStatus(isSpeaker ? 'Transcription stopped. Ready to record.' : 'Viewing');
-    }, [isSpeaker]);
+        // If password is null (user cancelled prompt), do nothing.
+    }, [initiateSessionAsSpeaker, setAppError]); // `initiateSessionAsSpeaker` is from useRoomManager
 
 
-    const handleLanguageChange = (lang) => {
+    // --- UI Event Handlers ---
+    const handleSpeakerLanguageChange = useCallback((lang) => {
         const wasTranscribing = isTranscribing;
         if (wasTranscribing) {
-            handleStopTranscription(); // Stop current transcription
+            stopTranscription();
         }
-        setSelectedLang(lang);
-        // The useEffect for speech recognition will pick up the new selectedLang
-        // and apply it if/when transcription restarts.
+        setSelectedSpeakerLang(lang);
         if (wasTranscribing && isSpeaker) {
-             // Add a slight delay to allow recognition to fully stop and language to set
-            setTimeout(() => handleStartTranscription(), 300);
+            // Allow speech hook to adjust to new language prop then restart
+            setTimeout(() => startTranscription(), 250);
         }
-    };
+    }, [isTranscribing, stopTranscription, isSpeaker, startTranscription]);
 
     const handleViewerLanguageChange = (lang) => {
         setSelectedViewerLang(lang);
-        // Existing messages won't auto-translate unless explicitly requested.
-        // New messages could potentially be auto-translated if 'lang' is set,
-        // but current logic requires manual click per message.
     };
 
     const handleTranslateRequest = useCallback((messageId, targetLang) => {
-        if (!socket || !roomId || !messageId || !targetLang) {
-            console.warn("Translate request aborted: missing parameters", { socket, roomId, messageId, targetLang });
-            return;
-        }
-        // Optimistically update UI
-        setMessages(prevMessages =>
-            prevMessages.map(msg => {
-                if (msg.id === messageId) {
-                    return {
-                        ...msg,
-                        isTranslating: {
-                            ...(msg.isTranslating || {}),
-                            [targetLang]: true
-                        }
-                    };
-                }
-                return msg;
-            })
-        );
+        if (!socket || !roomId || !messageId || !targetLang) return;
+        setMessages(prev => prev.map(msg => msg.id === messageId ? {
+            ...msg, isTranslating: { ...(msg.isTranslating || {}), [targetLang]: true }
+        } : msg));
         socket.emit('request_translation', { roomId, messageId, targetLang });
     }, [socket, roomId]);
 
+    // --- Render Logic ---
+    const effectiveAppStatus = appError ? '' : appStatus; // Hide status if error is present
 
-    if (!SpeechRecognition && isSpeaker) {
+    if (!speechApiSupported && isSpeaker /* This condition will be true once isSpeaker is confirmed by useRoomManager */) {
         return (
             <div className="App">
-                <div className="header"><h1>Voice Transcription</h1></div>
+                <header className="header"><h1>Voice Transcription</h1></header>
                 <div className="error-message">
                     Speech Recognition API is not supported in this browser.
                     Please try a different browser like Chrome or Edge.
@@ -382,65 +242,78 @@ function App() {
     return (
         <div className="App">
             <header className="header">
-                <h1>{isSpeaker ? "Live Transcription" : "Viewing Session"}</h1>
-                {status && <p className="status-indicator">{status}</p>}
-                {error && <div className="error-message" role="alert">{error}</div>}
+                <h1>Voice Transcription</h1>
+                {roomId && <div className="room-indicator">Room: {roomId} {isSpeaker ? "(Speaker)" : "(Viewer)"}</div>}
             </header>
 
-            {isSpeaker && (
-                <div className="controls-section">
-                    <ReusableLanguageSelector
-                        id="speaker-language"
-                        label="Your Spoken Language:"
-                        options={SPEAKER_LANGUAGES}
-                        selectedValue={selectedLang}
-                        onChange={handleLanguageChange}
-                        disabled={isTranscribing}
+            {!roomId && !showSpeakerSetupForm && (
+                <RoomSelectionScreen
+                    rooms={rooms}
+                    onJoinRoom={(selectedRoomId) => joinSessionAsViewer(selectedRoomId)}
+                    onShowSpeakerSetupForm={() => handleShowSpeakerSetupForm(true)}
+                    onAttemptBecomeSpeakerForRoom={handleAttemptBecomeSpeakerForExistingRoom} // <<< Pass the new handler
+                />
+            )}
+
+            {!roomId && showSpeakerSetupForm && (
+                <CreateRoomForm
+                    title="Set Up / Join Room as Speaker"
+                    submitButtonText="Start as Speaker"
+                    // onFormSubmit now takes (id, pass, adminSecret)
+                    onFormSubmit={(id, pass, adminSecretValue) => initiateSessionAsSpeaker(id, pass, adminSecretValue)}
+                    onCancel={() => handleShowSpeakerSetupForm(false)}
+                // error={roomErrorManager}
+                />
+            )}
+
+            {/* ... (In-Room UI when roomId is set) ... */}
+            {roomId && (
+                <>
+                    {isSpeaker && (
+                        <div className="controls-section speaker-controls">
+                            <ReusableLanguageSelector
+                                id="speaker-language"
+                                label="Your Language:"
+                                options={SPEAKER_LANGUAGES}
+                                selectedValue={selectedSpeakerLang}
+                                onChange={handleSpeakerLanguageChange}
+                            />
+                            <Controls
+                                isSpeaker={isSpeaker}
+                                isTranscribing={isTranscribing}
+                                onStart={startTranscription}
+                                onStop={stopTranscription}
+                                speechApiSupported={speechApiSupported}
+                            />
+                            {recognitionError && <p className="error-message">{recognitionError}</p>}
+                        </div>
+                    )}
+                    {!isSpeaker && roomId && (
+                        <div className="controls-section viewer-controls">
+                            <ReusableLanguageSelector
+                                id="viewer-language"
+                                label="Translate Messages To:"
+                                options={VIEWER_LANGUAGES}
+                                selectedValue={selectedViewerLang}
+                                onChange={handleViewerLanguageChange}
+                            />
+                        </div>
+                    )}
+                    <TranscriptDisplay
+                        messages={messages}
+                        isSpeaker={isSpeaker}
+                        selectedLanguage={selectedViewerLang}
+                        onTranslate={handleTranslateRequest}
+                        speakerLanguage={selectedSpeakerLang} // Original language of the speaker
+                        availableTranslationLanguages={VIEWER_LANGUAGES.filter(l => l.value !== '')}
                     />
-                    <button
-                        type="button"
-                        className={`record-btn ${isTranscribing ? 'recording' : ''}`}
-                        onClick={isTranscribing ? handleStopTranscription : handleStartTranscription}
-                        disabled={!!error.includes("access denied")} // Disable if mic access is the core issue
-                        aria-live="polite"
-                    >
-                        {/* Add an icon here if desired */}
-                        {isTranscribing ? 'Stop Recording' : 'Start Recording'}
-                    </button>
-                </div>
+                    {isSpeaker && <QRCodeDisplay roomId={roomId} />}
+                </>
             )}
 
-            {!isSpeaker && roomId && ( // Show viewer language selector only if viewer and in a room
-                <div className="controls-section viewer-controls">
-                     <ReusableLanguageSelector
-                        id="viewer-language"
-                        label="Translate Messages To:"
-                        options={VIEWER_LANGUAGES}
-                        selectedValue={selectedViewerLang}
-                        onChange={handleViewerLanguageChange}
-                    />
-                </div>
-            )}
 
-            <TranscriptDisplay
-                messages={messages}
-                isSpeaker={isSpeaker}
-                selectedLanguage={selectedViewerLang} // Viewer's target language for translation
-                onTranslate={handleTranslateRequest}
-                // Pass speaker's current language for context if needed, e.g. to show "Original (English)"
-                speakerLanguage={selectedLang}
-            />
-
-            {isSpeaker && roomId && (
-                <QRCodeDisplay roomId={roomId} />
-            )}
-
-            {!roomId && !error && ( // Initial state before room is created/joined
-                 <div className="status-message">
-                    <p>Loading session...</p>
-                    {/* You could add a spinner here */}
-                </div>
-            )}
+            {appError && <div className="error-message">{appError}</div>}
+            {/* {effectiveAppStatus && <div className="status-message">{effectiveAppStatus}</div>} */}
         </div>
     );
 }

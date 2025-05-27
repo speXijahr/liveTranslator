@@ -1,0 +1,31 @@
+/* client/src/components/CreateRoomForm.css */
+
+.create-room-form-container {
+    width: 100%;
+    max-width: 450px; /* Slightly wider than the global .create-room-form if desired */
+    margin: 2rem auto; /* Center it with some margin */
+    padding: 1.5rem; /* Container padding */
+    background-color: var(--card-background);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg); /* Make it pop a bit more */
+  }
+  
+  /*
+    The following classes are assumed to be styled by your global CSS:
+    - .create-room-form-container h2 (inherited or via global h2)
+    - .form-group (and its label, input)
+    - .button-group (and its buttons)
+  */
+  
+  /* Specific styling for error messages within this form, if needed */
+  .create-room-form-container .form-error {
+    background-color: transparent; /* Override global .error-message background */
+    color: var(--error-color); /* Use the error color variable */
+    padding: 0; /* Override global .error-message padding */
+    margin-top: 0.5rem; /* Space above the error message */
+    margin-bottom: 0.5rem; /* Space below if needed, before buttons */
+    text-align: left; /* Align to the left for form context */
+    font-size: 0.8rem;
+    border: none; /* Override global border */
+    box-shadow: none; /* Override global shadow */
+  }

@@ -1,0 +1,85 @@
+/* client/src/components/Controls.css */
+.controls-container {
+    display: flex;
+    flex-direction: column; /* Stack button and status message */
+    align-items: center; /* Center items horizontally */
+    gap: 0.75rem; /* Space between button and status message */
+    padding: 1rem 0; /* Add some padding if it's not in a padded section already */
+  }
+  
+  /* The .record-btn and .record-btn.recording styles are assumed to be
+     in your global App.css and will apply to the button.
+     If they are not global, you would move/copy them here or into App.css. */
+  
+  /* Example: Styles for .record-btn if you didn't have them globally
+     (but you likely do from previous App.css)
+  .record-btn {
+    padding: 0.875rem 1.75rem;
+    border: none;
+    border-radius: var(--radius, 0.5rem);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-std, all 0.25s ease-in-out);
+    background-color: var(--primary-color, #2563eb);
+    color: white;
+    min-width: 180px; // Adjusted min-width for potentially longer text
+    box-shadow: var(--shadow-sm, 0 2px 4px -1px rgb(0 0 0 / 0.06), 0 2px 2px -1px rgb(0 0 0 / 0.04));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  
+  .record-btn:hover:not(:disabled) {
+    background-color: var(--primary-hover, #1d4ed8);
+    box-shadow: var(--shadow, 0 4px 8px -2px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.06));
+  }
+  
+  .record-btn.recording {
+    background-color: var(--error-color, #ef4444);
+    animation: pulse 1.5s infinite ease-in-out; // Assuming pulse animation is defined
+  }
+  
+  .record-btn.recording:hover:not(:disabled) {
+    background-color: #d32f2f; // Darker red
+  }
+  
+  .record-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background-color: var(--secondary-color, #64748b);
+    box-shadow: none;
+  }
+  
+  .record-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3); // Softer focus ring
+  }
+  */
+  
+  .controls-status-message { /* For the "You are a viewer..." message */
+    padding: 1rem;
+    text-align: center;
+    color: var(--text-secondary, #64748b);
+    font-style: italic;
+    width: 100%;
+  }
+  
+  .transcription-status-inline {
+    font-size: 0.8rem;
+    color: var(--text-secondary, #64748b);
+  }
+  
+  .transcription-status-inline.error-text {
+    color: var(--error-color, #ef4444);
+    font-weight: 500;
+  }
+  
+  /* Ensure your pulse animation is defined (likely in App.css)
+  @keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  */

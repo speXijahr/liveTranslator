@@ -1,0 +1,74 @@
+/* ... (your existing .room-selection-container, .room-grid, .room-card styles) ... */
+
+.room-card .room-status,
+.room-card .viewer-count {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.room-card .room-actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column; /* Stack buttons */
+  gap: 0.5rem; /* Space between buttons */
+}
+
+.btn { /* Basic button styling if not already global */
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  text-align: center;
+  transition: var(--transition-fast);
+  box-shadow: var(--shadow-xs);
+}
+.btn:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+.btn:active {
+ transform: translateY(0px);
+}
+
+
+.btn.btn-join-viewer {
+  background-color: var(--primary-color);
+  color: white;
+}
+.btn.btn-join-viewer:hover {
+  background-color: var(--primary-hover);
+}
+
+.btn.btn-become-speaker {
+  background-color: var(--success-color); /* A green color for positive action */
+  color: white;
+}
+.btn.btn-become-speaker:hover {
+  background-color: #16a34a; /* Darker green, assuming --success-hover isn't defined */
+}
+
+.btn-create-new-room { /* For the main button at the bottom */
+   display: block;
+   width: 100%;
+   max-width: 300px; /* Or as desired */
+   margin: 2rem auto 1rem auto; /* Centered with space */
+   padding: 0.875rem 1.5rem;
+   background-color: var(--primary-color);
+   color: white;
+   font-size: 1rem;
+   font-weight: 600;
+   border-radius: var(--radius);
+}
+ .btn-create-new-room:hover {
+   background-color: var(--primary-hover);
+ }
+
+.no-rooms-message {
+  text-align: center;
+  color: var(--text-secondary);
+  margin: 2rem 0;
+}
